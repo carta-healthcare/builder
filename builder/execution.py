@@ -4,21 +4,32 @@ import logging
 import signal
 import subprocess
 import Queue
-import arrow
 import collections
-import shlex
 import concurrent.futures
+import shlex
 import json
 import tempfile
+import os
+import re
+
+import builder.futures
+from builder.util import arrow_factory as arrow
+import builder.build as build
 
 import networkx as nx
 from tornado import gen
 from tornado import ioloop
-from tornado.web import asynchronous, RequestHandler, Application
+from tornado.web import asynchronous, RequestHandler, Application, StaticFileHandler
+from tornado.template import Loader, Template
 
 LOG = logging.getLogger(__name__)
 PROCESSING_LOG = logging.getLogger("builder.execution.processing")
 TRANSITION_LOG = logging.getLogger("builder.execution.transition")
+
+def _interruptable_sleep(seconds):
+    # Loop so it can be interrupted quickly (sleep does not pay attention to interrupt)
+    for i in xrange(min(int(seconds), 1)):
+        time.sleep(1)
 
 class ExecutionResult(object):
     def __init__(self, is_async, status=None, stdout=None, stderr=None):
@@ -147,6 +158,7 @@ class PrintExecutor(Executor):
         build_graph = self.get_build_graph()
         command = job.get_command()
         job.set_should_run(False)
+        job.set_stale(False)
 
         print "Simulation:", command
         target_relationships = build_graph.get_target_relationships(job.get_id())
@@ -158,7 +170,7 @@ class PrintExecutor(Executor):
         for target_id in produced_targets:
             target = build_graph.get_target(target_id)
             target.exists = True
-            target.mtime = arrow.get()
+            target.mtime = arrow.get().timestamp
             print "Simulation: Built target {}".format(target.get_id())
             for dependent_job_id in build_graph.get_dependent_ids(target_id):
                 dependent_job = build_graph.get_job(dependent_job_id)
@@ -170,7 +182,7 @@ class PrintExecutor(Executor):
 
 class ExecutionManager(object):
 
-    def __init__(self, build_manager, executor_factory, max_retries=5, config=None):
+    def __init__(self, build_manager, executor_factory, max_retries=5, job_timeout=30*60, config=None):
         self.build_manager = build_manager
         self.build = build_manager.make_build()
         self.max_retries = max_retries
@@ -187,6 +199,7 @@ class ExecutionManager(object):
         self.last_job_completed_on = None
         self.last_job_submitted_on = None
         self.last_job_worked_on = None
+        self.job_timeout = job_timeout
 
         self.running = False
 
@@ -205,7 +218,7 @@ class ExecutionManager(object):
         for job_id in job_ids:
             self._recursive_invalidate_job(job_id)
 
-    def submit(self, job_definition_id, build_context, update_topmost=False, **kwargs):
+    def submit(self, job_definition_id, build_context, update_topmost=False, update_all=False, **kwargs):
         """
         Submit the provided job to be built
         """
@@ -219,15 +232,17 @@ class ExecutionManager(object):
                 build_update = self.build.add_job(job_definition_id, build_context, **kwargs)
             else:
                 build_update = self.build.add_meta(job_definition_id, build_context, **kwargs)
-            if update_topmost:
-                top_most = []
-                for node_id in build_update.targets:
-                    if self.build.in_degree(node_id) == 0:
-                        if self.build.is_target(node_id):
-                            top_most.append(node_id)
 
-                LOG.debug("UPDATE_SUBMITTED_TOP_MOST => {}".format(top_most))
-                self.external_update_targets(top_most)
+            update_nodes = set()
+            if update_topmost or update_all:
+                for node_id in build_update.targets:
+                    if self.build.in_degree(node_id) == 0 or update_all:
+                        if self.build.is_target(node_id):
+                            update_nodes.add(node_id)
+
+                LOG.debug("UPDATE_SUBMITTED => {}".format(update_nodes))
+                self.external_update_targets(update_nodes)
+
 
             LOG.debug("SUBMISSION => Build graph expansion complete")
 
@@ -379,9 +394,10 @@ class ExecutionManager(object):
         # Start completed jobs consumer if not inline
         executor = None
         if not inline:
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+            executor = builder.futures.ThreadPoolExecutor(max_workers=3)
             executor.submit(self._consume_completed_jobs, block=True)
             executor.submit(self._check_for_timeouts)
+            executor.submit(self._check_for_passed_curfews)
 
         jobs_executed = 0
         ONEYEAR = 365 * 24 * 60 * 60
@@ -463,7 +479,27 @@ class ExecutionManager(object):
             for job in timed_out_jobs:
                 self.execution_times.pop(job)
                 self.executor.finish_job(job, ExecutionResult(is_async=False, status=False))
-            time.sleep(10)
+
+            _interruptable_sleep(10)
+
+    def _check_for_passed_curfews(self):
+
+        while self.running:
+            PROCESSING_LOG.debug("CURFEWS => Checking for stale jobs past curfew")
+            stale_jobs_past_curfew = []
+            for node_id in self.build.node.keys():
+
+                if (not node_id in self.build.node) or (not self.build.is_job(node_id)):
+                    continue
+                job = self.build.get_job(node_id)
+                if job.past_curfew() and job.get_stale() and job.get_buildable():
+                    job.invalidate()
+                    if job.get_should_run():
+                        stale_jobs_past_curfew.append(job)
+                        self._work_queue.put(job.get_id())
+            PROCESSING_LOG.debug("CURFEWS => These jobs were stale, past curfew, and should run: {}".format(
+                stale_jobs_past_curfew))
+            _interruptable_sleep(60)
 
     def get_next_jobs_to_run_recurse(self, job_id):
         next_job_ids = set()
@@ -487,9 +523,9 @@ class ExecutionManager(object):
 
     def execute(self, job_id):
         # Don't run a job more than the configured max number of retries
-        TRANSITION_LOG.debug("EXECUTION => Executing {}".format(job_id))
         self.last_job_executed_on = arrow.get()
         job = self.build.get_job(job_id)
+        TRANSITION_LOG.info("EXECUTION => Executing {} ({})".format(job_id, job.get_command()))
 
         # Execute job
         result = self._execute(job)
@@ -543,7 +579,7 @@ def _submit_from_json(execution_manager, json_body):
             build_context[k] = arrow.get(build_context[k])
     LOG.debug("build_context is {}".format(build_context))
 
-    execution_manager.submit(update_topmost=True, **payload)
+    execution_manager.submit(**payload)
 
 def _update_from_json(execution_manager, json_body):
     payload = json.loads(json_body)
@@ -615,65 +651,74 @@ class RDGHandler(RequestHandler):
         self.build_manager = self.execution_manager.get_build_manager()
 
     def get(self):
-        LOG.info("Getting RDG as dot format")
+        LOG.info("Getting RDG")
         rdg = self.build_manager.get_rule_dependency_graph()
         data = nx.to_agraph(rdg).string()
         self.write(data)
 
 
+
 class BuildGraphHandler(RequestHandler):
+    ALL = object()
+
     def initialize(self, execution_manager):
         self.execution_manager = execution_manager
         self.build_manager = self.execution_manager.get_build_manager()
 
 
-    def get(self):
+    def get(self, format='json'):
         LOG.info("Getting build graph as dot format")
         build_graph = self.execution_manager.get_build()
 
         LOG.debug("Updating graph display status")
 
         # Update colors based on existence
-        data = collections.defaultdict(lambda: collections.defaultdict(dict))
-        for node_id, node_data in build_graph.node.iteritems():
-            if build_graph.is_target(node_id):
-                target = build_graph.get_target(node_id)
-                value = {}
-                if not target.cached_mtime:
-                    value['fillcolor'] = '#F7FE2E'
-                    value['exists'] = None
-                    value['mtime'] = None
-                elif target.get_exists():
-                    value['fillcolor'] = '#82FA58'
-                    value['exists'] = True
-                    value['mtime'] = target.get_mtime()
-                else:
-                    value['fillcolor'] = '#FE2E2E'
-                    value['mtime'] = target.get_mtime()
-                    value['exists'] = False
-                node_data.update(value)
-                data['targets'][target.unexpanded_id][target.get_id()] = value
-            elif build_graph.is_job(node_id):
-                job = build_graph.get_job(node_id)
-                value = {'should_run': job.get_should_run(), 'should_run_immediate': job.get_should_run_immediate()}
-                data['jobs'][job.unexpanded_id][job.get_id()] = value
-
+        include_edges = self.get_argument("edges", default=None)
+        query = {
+            'job_definition_ids': self.get_arguments('job-definition'),
+            'expander_ids': self.get_arguments('expander'),
+            'includes': self.get_arguments('include'),
+            'excludes': self.get_arguments('exclude'),
+            'include_neighbors': self.get_argument('neighbors', default=None)
+        }
+        transformer = builder.build.BuildGraphTransformer(build_graph)
+        #data = self._convert_graph_to_json_and_update(build_graph, include_edges, query)
 
         LOG.debug("Finished updating graph display status")
-        if self.get_argument("dot", default=None):
-            tf = tempfile.TemporaryFile()
-            nx.write_dot(build_graph, tf)
-            tf.seek(0)
-            data = tf.read()
+        if format == 'dot':
+            data = transformer.to_dot(query)
             self.write(data)
+        elif format == 'html':
+            self.render('build-graph.html')
+        elif format in {'pdf', 'png', 'jpg'}:
+            dot_file = tempfile.NamedTemporaryFile()
+            transformer.write_dot(dot_file.name, query)
+            with open(dot_file.name) as f:
+                length = len(f.read())
+                if length > 4e6:
+                    self.write("Error: Graph is too big, not converting")
+                    return
+            pdf_file = tempfile.NamedTemporaryFile()
+            subprocess.call(['/usr/bin/dot', '-T'+format, dot_file.name, '-o', pdf_file.name])
+            pdf_file.seek(0)
+            self.write(pdf_file.read())
+            if format == 'pdf':
+                mime_type = 'application/pdf'
+            elif format == 'png':
+                mime_type = 'image/png'
+            elif format == 'jpg':
+                mime_type = 'image/jpeg'
+            self.set_header('Content-Type', mime_type)
         else:
+            data = transformer.to_json(include_edges, query)
             self.write(data)
+
 
 
 class ExecutionDaemon(object):
 
-    def __init__(self, execution_manager, port=20345):
-        work_queue = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    def __init__(self, execution_manager, port=20345, debug=False):
+        work_queue = builder.futures.ThreadPoolExecutor(max_workers=2)
         self.execution_manager = execution_manager
         self.application = Application([
             (r"/submit", SubmitHandler, {"execution_manager" : self.execution_manager, "work_queue": work_queue}),
@@ -682,14 +727,18 @@ class ExecutionDaemon(object):
                                                          "work_queue": work_queue}),
             (r"/status", StatusHandler, {"execution_manager" : self.execution_manager}),
             (r"/rdg", RDGHandler, {"execution_manager" : self.execution_manager}),
-            (r"/build-graph", BuildGraphHandler, {"execution_manager" : self.execution_manager}),
-        ])
+            (r"/build-graph\.?(?P<format>[^\/]+)?", BuildGraphHandler, {"execution_manager" : self.execution_manager}),
+            (r'/static/(.*)', StaticFileHandler, {'path': os.path.join(os.path.dirname(__file__), 'static')}),
+        ], template_path=os.path.join(os.path.dirname(__file__), 'static'), debug=debug)
         self.port = port
         self.is_closing = False
+        self.debug = debug
+
 
     def signal_handler(self, signum, frame):
             LOG.info('exiting...')
             self.is_closing = True
+
 
     def try_exit(self):
         if self.is_closing:
@@ -697,11 +746,12 @@ class ExecutionDaemon(object):
             ioloop.IOLoop.instance().stop()
             LOG.info('exit success')
 
+
     def start(self):
-        is_closing = False
+        self.is_closing = False
 
         signal.signal(signal.SIGINT, self.signal_handler)
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        executor = builder.futures.ThreadPoolExecutor(max_workers=1)
         executor.submit(self.execution_manager.start_execution, inline=False)
         self.application.listen(self.port)
         LOG.info("Starting job listener")
