@@ -3,7 +3,7 @@ import time
 import logging
 import signal
 import subprocess
-import Queue
+import queue
 import collections
 import concurrent.futures
 import shlex
@@ -28,7 +28,7 @@ TRANSITION_LOG = logging.getLogger("builder.execution.transition")
 
 def _interruptable_sleep(seconds):
     # Loop so it can be interrupted quickly (sleep does not pay attention to interrupt)
-    for i in xrange(min(int(seconds), 1)):
+    for i in range(min(int(seconds), 1)):
         time.sleep(1)
 
 class ExecutionResult(object):
@@ -138,14 +138,18 @@ class LocalExecutor(Executor):
 
     def do_execute(self, job):
         command = job.get_command()
-        command_list = shlex.split(command)
-        LOG.info("Executing '{}'".format(command))
-        proc = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (stdout, stderr) = proc.communicate()
-        LOG.info("{} STDOUT: {}".format(command, stdout))
-        LOG.info("{} STDERR: {}".format(command, stderr))
+        if command:
+            #command_list = shlex.split(command)
+            LOG.info("Executing '{}'".format(command))
+            proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            (stdout, stderr) = proc.communicate()
+            LOG.info("{} STDOUT: {}".format(command, stdout))
+            LOG.info("{} STDERR: {}".format(command, stderr))
 
-        return ExecutionResult(is_async=False, status=proc.returncode == 0, stdout=stdout, stderr=stderr)
+            return ExecutionResult(is_async=False, status=proc.returncode == 0, stdout=stdout, stderr=stderr)
+        else:
+            LOG.info("Executing python job definition")
+            return ExecutionResult(is_async=False, status=True)
 
 
 class PrintExecutor(Executor):
@@ -160,10 +164,10 @@ class PrintExecutor(Executor):
         job.set_should_run(False)
         job.set_stale(False)
 
-        print "Simulation:", command
+        print("Simulation:", command)
         target_relationships = build_graph.get_target_relationships(job.get_id())
         produced_targets = {}
-        for target_type, target_group in target_relationships.iteritems():
+        for target_type, target_group in target_relationships.items():
             if target_type == "alternates":
                 continue
             produced_targets.update(target_group)
@@ -171,7 +175,7 @@ class PrintExecutor(Executor):
             target = build_graph.get_target(target_id)
             target.exists = True
             target.mtime = arrow.get().timestamp
-            print "Simulation: Built target {}".format(target.get_id())
+            print("Simulation: Built target {}".format(target.get_id()))
             for dependent_job_id in build_graph.get_dependent_ids(target_id):
                 dependent_job = build_graph.get_job(dependent_job_id)
                 dependent_job.invalidate()
@@ -188,8 +192,8 @@ class ExecutionManager(object):
         self.max_retries = max_retries
         self.config = config
         self._build_lock = threading.RLock()
-        self._work_queue = Queue.Queue()
-        self._complete_queue = Queue.Queue()
+        self._work_queue = queue.Queue()
+        self._complete_queue = queue.Queue()
         self.executor = executor_factory(self, config=self.config)
         self.execution_times = {}
         self.submitted_jobs = 0
@@ -362,7 +366,7 @@ class ExecutionManager(object):
             func = target.get_bulk_exists_mtime
             update_function_list[func].append(target)
 
-        for update_function, targets in update_function_list.iteritems():
+        for update_function, targets in update_function_list.items():
             update_function(targets)
 
     def add_to_work_queue(self, job_id):
@@ -389,7 +393,7 @@ class ExecutionManager(object):
         # Seed initial jobs
         work_queue = self._work_queue
         next_jobs = self.get_jobs_to_run()
-        map(self.add_to_work_queue, next_jobs)
+        list(map(self.add_to_work_queue, next_jobs))
 
         # Start completed jobs consumer if not inline
         executor = None
@@ -408,7 +412,7 @@ class ExecutionManager(object):
 
             try:
                 job_id = work_queue.get(True, timeout=1)
-            except Queue.Empty:
+            except queue.Empty:
                 continue
             self.last_job_worked_on = arrow.now()
 
@@ -448,7 +452,7 @@ class ExecutionManager(object):
             tick += 1
             try:
                 job_id = complete_queue.get(True, timeout=1)
-            except Queue.Empty:
+            except queue.Empty:
                 continue
             self.last_job_completed_on = arrow.now()
             self.completed_jobs += 1
@@ -462,9 +466,9 @@ class ExecutionManager(object):
 
             TRANSITION_LOG.debug("COMPLETION_LOOP =>  Completed job {}".format(job_id))
             next_jobs = self.get_next_jobs_to_run(job_id)
-            next_jobs = filter(lambda job_id: not self.build.get_job(job_id).is_running, next_jobs)
+            next_jobs = [job_id for job_id in next_jobs if not self.build.get_job(job_id).is_running]
             TRANSITION_LOG.debug("COMPLETION_LOOP => Received completed job {}. Next jobs are {}".format(job_id, next_jobs))
-            map(self.add_to_work_queue, next_jobs)
+            list(map(self.add_to_work_queue, next_jobs))
         LOG.debug("COMPLETION_LOOP => Done consuming completed jobs")
 
     def _check_for_timeouts(self):
@@ -473,7 +477,7 @@ class ExecutionManager(object):
             PROCESSING_LOG.debug("TIMEOUTS => Checking for timeouts")
             timed_out_jobs = []
             now = arrow.get()
-            for job, timestamp in self.execution_times.iteritems():
+            for job, timestamp in self.execution_times.items():
                 if (now - timestamp).total_seconds() > self.job_timeout:
                     timed_out_jobs.append(job)
             for job in timed_out_jobs:
@@ -487,7 +491,7 @@ class ExecutionManager(object):
         while self.running:
             PROCESSING_LOG.debug("CURFEWS => Checking for stale jobs past curfew")
             stale_jobs_past_curfew = []
-            for node_id in self.build.node.keys():
+            for node_id in list(self.build.node.keys()):
 
                 if (not node_id in self.build.node) or (not self.build.is_job(node_id)):
                     continue
@@ -561,7 +565,7 @@ class ExecutionManager(object):
 
     def get_running_jobs(self):
         running_jobs = []
-        for job, timestamp in self.execution_times.iteritems():
+        for job, timestamp in self.execution_times.items():
             running_jobs.append((job.get_id(), timestamp))
 
         return running_jobs
@@ -635,10 +639,10 @@ class StatusHandler(RequestHandler):
             'n_submitted_jobs': self.execution_manager.submitted_jobs,
             'n_completed_jobs': self.execution_manager.completed_jobs,
             'running_jobs': [(k, v.isoformat()) for k, v in self.execution_manager.get_running_jobs()],
-            'last_job_executed_on': unicode(self.execution_manager.last_job_executed_on),
-            'last_job_submitted_on': unicode(self.execution_manager.last_job_submitted_on),
-            'last_job_completed_on': unicode(self.execution_manager.last_job_completed_on),
-            'last_job_worked_on': unicode(self.execution_manager.last_job_worked_on),
+            'last_job_executed_on': str(self.execution_manager.last_job_executed_on),
+            'last_job_submitted_on': str(self.execution_manager.last_job_submitted_on),
+            'last_job_completed_on': str(self.execution_manager.last_job_completed_on),
+            'last_job_worked_on': str(self.execution_manager.last_job_worked_on),
             'n_build_graph_nodes': len(self.execution_manager.get_build().node),
             'n_rdg_nodes': len(self.execution_manager.get_build_manager().get_rule_dependency_graph().node)
         }

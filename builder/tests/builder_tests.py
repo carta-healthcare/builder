@@ -30,7 +30,7 @@ class GraphTest(unittest.TestCase):
                                      'end_time': arrow.get("2015-01-01T00:01:00+00:00")})
 
         # Then
-        self.assertEquals(len(build.node), 6)
+        self.assertEqual(len(build.node), 6)
 
     def test_rule_dep_construction(self):
         # Given
@@ -324,8 +324,8 @@ class GraphTest(unittest.TestCase):
         for k in rdg.node:
             if isinstance(rdg.node[k]['object'], builder.expanders.Expander):
                 rdg.node[k]['object'].expand = mock.Mock(wraps=rdg.node[k]['object'].expand)
-                print "Replacing expand on {}".format(k)
-        print "Replaced expand method"
+                print("Replacing expand on {}".format(k))
+        print("Replaced expand method")
         build = build_manager.make_build()
 
         expected_call_count1 = 1
@@ -2602,7 +2602,7 @@ class GraphTest(unittest.TestCase):
 
         # Then
         count = 0
-        for node_id, node in build.node.iteritems():
+        for node_id, node in build.node.items():
             if node.get("object") is None:
                 continue
             if not isinstance(node["object"], builder.jobs.Job):
@@ -3067,14 +3067,14 @@ class GraphTest(unittest.TestCase):
 
         # When
         job_state_iter = build.job_iter()
-        job_tuple1 = job_state_iter.next()
-        job_tuple2 = job_state_iter.next()
-        job_tuple3 = job_state_iter.next()
+        job_tuple1 = next(job_state_iter)
+        job_tuple2 = next(job_state_iter)
+        job_tuple3 = next(job_state_iter)
         job_tuples = [job_tuple1, job_tuple2, job_tuple3]
         job_id_matching = [(x, y.unexpanded_id) for x, y in job_tuples]
 
         # Then
-        self.assertRaises(StopIteration, job_state_iter.next)
+        self.assertRaises(StopIteration, job_state_iter.__next__)
         self.assertNotEqual(job_tuple1, job_tuple2)
         self.assertNotEqual(job_tuple1, job_tuple3)
         self.assertNotEqual(job_tuple2, job_tuple3)
@@ -3742,7 +3742,7 @@ class RuleDependencyGraphTest(unittest.TestCase):
         jobs = graph.get_all_jobs()
 
         # Then
-        self.assertEquals(2, len(jobs))
+        self.assertEqual(2, len(jobs))
 
     def test_get_all_target_expanders(self):
         # Given
@@ -3752,7 +3752,7 @@ class RuleDependencyGraphTest(unittest.TestCase):
         targets = graph.get_all_target_expanders()
 
         # Then
-        self.assertEquals(8, len(targets))
+        self.assertEqual(8, len(targets))
         for target in targets:
             self.assertIsInstance(target, builder.expanders.Expander)
 
@@ -3868,7 +3868,7 @@ class UtilTest(unittest.TestCase):
 
         # Then
         for truth, frequency in zip(truths, converted_frequencies):
-            self.assertEquals(truth, frequency)
+            self.assertEqual(truth, frequency)
 
 
 class BuildGraphQueryTest(unittest.TestCase):

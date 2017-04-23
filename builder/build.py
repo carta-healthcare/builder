@@ -211,14 +211,14 @@ class RuleDependencyGraph(BaseGraph):
         """
         self.add_node(job)
         targets = job.get_targets()
-        for target_type, target in targets.iteritems():
+        for target_type, target in targets.items():
             for sub_target in target:
                 self.add_node(sub_target)
                 self.add_edge(job.unexpanded_id, sub_target.unexpanded_id,
                               label=target_type)
 
         dependencies = job.get_dependencies()
-        for dependency_type, dependency in dependencies.iteritems():
+        for dependency_type, dependency in dependencies.items():
             for sub_dependency in dependency:
                 self.add_node(sub_dependency)
                 self.add_edge(sub_dependency.unexpanded_id, job.unexpanded_id,
@@ -459,7 +459,7 @@ class RuleDependencyGraph(BaseGraph):
         """Return a list of all jobs in the rule dependency graph
         """
         jobs = []
-        for job_id in filter(lambda x: self.is_job_definition(x), self.node):
+        for job_id in [x for x in self.node if self.is_job_definition(x)]:
             jobs.append(self.get_job_definition(job_id))
 
         return jobs
@@ -476,7 +476,7 @@ class RuleDependencyGraph(BaseGraph):
 
             return False
 
-        for target_node in filter(select_nodes, self.node.itervalues()):
+        for target_node in filter(select_nodes, iter(self.node.values())):
             targets.append(target_node['object'])
 
         return targets
@@ -906,25 +906,25 @@ class BuildGraph(BaseGraph):
             data: any extra data to be added to the edge dict
         """
         dependency_node_id = "{}_{}_{}".format(
-            node.unique_id, dependency_type.func_name,
+            node.unique_id, dependency_type.__name__,
             "_".join([x.unique_id for x in dependencies]))
 
         dependency = builder.dependencies.Dependency(dependency_type,
                                                      dependency_node_id,
-                                                     dependency_type.func_name)
+                                                     dependency_type.__name__)
 
         # self.add_node(dependency, build_update, label=dependency_type.func_name)
         self.add_node(dependency, build_update)
 
         self.add_edge(dependency_node_id, node.unique_id, data,
-                      label=dependency_type.func_name,
-                      kind=dependency_type.func_name)
+                      label=dependency_type.__name__,
+                      kind=dependency_type.__name__)
 
         for dependency in dependencies:
             dependency = self.add_node(dependency, build_update)
             self.add_edge(dependency.unique_id, dependency_node_id, data,
-                          label=dependency_type.func_name,
-                          kind=dependency_type.func_name)
+                          label=dependency_type.__name__,
+                          kind=dependency_type.__name__)
 
     def _expand_direction(self, job, direction, build_update):
         """Takes in a node and expands it's targets or dependencies and adds
@@ -955,7 +955,7 @@ class BuildGraph(BaseGraph):
 
         expanded_targets_list = []
         # expanded for each type of target or dependency
-        for target_type, target_group in target_depends.iteritems():
+        for target_type, target_group in target_depends.items():
             for target in target_group:
                 build_context = job.build_context
                 edge_data = target.edge_data
@@ -1219,10 +1219,10 @@ class BuildGraph(BaseGraph):
             type_target_map[type(target)].append(target)
 
         touched_target_ids = []
-        for target_type, targets in type_target_map.iteritems():
+        for target_type, targets in type_target_map.items():
             LOG.debug("Refreshing {} targets of type {}".format(len(targets), target_type))
             exists_map = target_type.get_bulk_exists_mtime(targets)
-            for target_id, state in exists_map.iteritems():
+            for target_id, state in exists_map.items():
                 target = self.get_target(target_id)
                 if target.is_cached() and uncached_only:
                     continue
@@ -1392,7 +1392,7 @@ class BuildGraphTransformer(object):
         jobs, targets, links = set(), set(), set()
 
         # Filter based on query params
-        for node_id, node_data in self.build_graph.node.items():
+        for node_id, node_data in list(self.build_graph.node.items()):
             include_node = query.include_node(node_id)
             if not include_node:
                 continue
@@ -1424,7 +1424,7 @@ class BuildGraphTransformer(object):
         # Make sure jobs and targets are in return data
         data['jobs']
         data['targets']
-        for node_id, node_data in self.build_graph.node.items():
+        for node_id, node_data in list(self.build_graph.node.items()):
             if self.build_graph.is_target(node_id) and node_id in target_ids:
                 target = self.build_graph.get_target(node_id)
                 value = self._get_target_state(target)

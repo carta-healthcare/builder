@@ -135,7 +135,7 @@ class Job(object):
 
         alt_check = False
         target_mtimes = [float("inf")]
-        for target_id, data in produced_targets.iteritems():
+        for target_id, data in produced_targets.items():
             target = self.build_graph.get_target(target_id)
             if not target.get_exists() and not alt_check:
                 stale_alternates = self.get_stale_alternates()
@@ -155,7 +155,7 @@ class Job(object):
         """
         dependency_dict = self.build_graph.get_dependency_relationships(
                 self.unique_id)
-        for _, group_list in dependency_dict.iteritems():
+        for _, group_list in dependency_dict.items():
             for group_dict in group_list:
                 if group_dict["data"].get("ignore_mtime", False):
                     continue
@@ -396,9 +396,40 @@ class Job(object):
 
     def get_command(self):
         """Returns the job's expanded command"""
-        return self.job.get_command(self.unique_id, self.build_context,
+        command_template = self.job.get_command(self.unique_id, self.build_context,
                                           self.build_graph)
+        return self._replace_command(command_template, )
 
+    def _replace_command(self, command):
+        """Used to replace all of the formatting on the string used for
+        recipes
+        """
+        got_format_args = False
+
+        if "$@" in command:
+            target_edges = self.build_graph.out_edges(self.unique_id)
+            target_edges = filter(lambda x: self.build_graph.get_edge_data(*x).get('label') == 'produces', target_edges)
+            targets = " ".join(map(lambda x: x[1], target_edges))
+            command = command.replace("$@", targets)
+
+        dependency_ids = self.build_graph.get_dependency_ids(self.unique_id)
+        existing_dependency_ids = []
+        for dependency_id in dependency_ids:
+            dependency = self.build_graph.get_target(dependency_id)
+            if dependency.get_exists():
+                existing_dependency_ids.append(dependency_id)
+
+        if "$^" in command:
+            prerequisites_string = " ".join(existing_dependency_ids)
+            command = command.replace("$^", prerequisites_string)
+
+        if "$A" in command:
+            user_args = self.build_context.get('user_args') or []
+            user_args = " ".join(user_args)
+            command = command.replace("$A", user_args)
+
+        command = str(command)
+        return command
 
     def get_id(self):
         """ Returns this Job's unique id
@@ -519,23 +550,113 @@ class JobDefinition(object):
     def get_always_force(self):
         return False
 
+    def run(self):
+        """
+        Override this function to execute python jobs
+        :return:
+        """
+        raise NotImplementedError("Run function not implemented")
+
     def __repr__(self):
         dependencies_dict = self.get_dependencies()
         targets_dict = self.get_targets()
 
         str_dependencies = collections.defaultdict(list)
-        for dependency_type, dependencies in dependencies_dict.iteritems():
+        for dependency_type, dependencies in dependencies_dict.items():
             for dependency in dependencies:
                 str_dependencies[dependency_type].append(dependency.unexpanded_id)
 
         str_targets = collections.defaultdict(list)
-        for target_type, targets in targets_dict.iteritems():
+        for target_type, targets in targets_dict.items():
             for target in targets:
                 str_targets[target_type].append(target.unexpanded_id)
 
         this_dict = {"depends": str_dependencies, "targets": str_targets}
 
         return str(json.dumps(this_dict, indent=2))
+
+def new_expand_wrapper(old_expand, target_mtime):
+    def new_expand(*args, **kwargs):
+        targets = old_expand(*args, **kwargs)
+        for target in targets:
+            target.mtime = target_mtime
+            target.cached_mtime = True
+        return targets
+    return new_expand
+
+class SimpleTestJobDefinition(JobDefinition):
+    """A simple API for creating a job through constructor args"""
+
+
+    def __init__(self, unexpanded_id=None, targets=None, depends=None,
+            config=None, should_run=False, parents_should_run=False,
+            target_type=None, expander_type=None,
+            depends_dict=None, targets_dict=None, **kwargs):
+        super(SimpleTestJobDefinition, self).__init__(unexpanded_id, config=config, **kwargs)
+        self.targets = targets
+
+        self.should_run = should_run
+        self.parents_should_run = parents_should_run
+        self.target_type = target_type
+        self.expander_type = expander_type or builder.expanders.Expander
+
+        self.setup_dependencies_and_targets(depends_dict, targets_dict, depends, targets)
+
+
+    def setup_dependencies_and_targets(self, depends_dict, targets_dict, depends, targets):
+        # Set up dependency dictionary
+        targets_mtime_dict = {}
+        depends_dict = depends_dict or {}
+        depends_dict.setdefault('depends', [])
+        depends_dict.setdefault('depends_one_or_more', [])
+        if depends:
+            for depend in depends:
+                if isinstance(depend, dict):
+                    depends_type = depend.pop('type', 'depends')
+                    has_mtime = "start_mtime" in depend
+                    target_mtime = depend.pop('start_mtime', None)
+                    expander = self.expander_type(
+                            self.target_type,
+                            **depend)
+                    if has_mtime:
+                        expander.expand = new_expand_wrapper(expander.expand,
+                                                             target_mtime)
+                    depends_dict[depends_type].append(expander)
+                elif isinstance(depend, str):
+                    depends_dict['depends'].append(
+                        self.expander_type(
+                            self.target_type,
+                        depend)
+                    )
+        self.dependencies = depends_dict
+
+        # Set up target dictionary
+        targets_dict = targets_dict or {}
+        targets_dict.setdefault("produces", [])
+        targets_dict.setdefault("alternates", [])
+        if targets:
+            for target in targets:
+                if isinstance(target, dict):
+                    target_type = target.pop('type', 'produces')
+                    has_mtime = "start_mtime" in target
+                    target_mtime = target.pop('start_mtime', None)
+                    expander = self.expander_type(
+                        self.target_type,
+                        **target
+                    )
+                    if has_mtime:
+                        expander.expand = new_expand_wrapper(expander.expand,
+                                                             target_mtime)
+                    targets_dict[target_type].append(expander)
+                elif isinstance(target, str):
+
+                    targets_dict["produces"].append(
+                        self.expander_type(
+                            self.target_type,
+                            target)
+                     )
+        self.targets = targets_dict
+
 
 class TimestampExpandedJobDefinition(JobDefinition):
     """A job that combines the timestamp expanded node and the job node
@@ -573,7 +694,7 @@ class TimestampExpandedJobDefinition(JobDefinition):
                                             self.file_step))
 
         expanded_nodes = []
-        for expanded_id, build_context in expanded_contexts.iteritems():
+        for expanded_id, build_context in expanded_contexts.items():
             expanded_node = self.construct_job(expanded_id, build_graph, build_context)
             expanded_nodes.append(expanded_node)
 

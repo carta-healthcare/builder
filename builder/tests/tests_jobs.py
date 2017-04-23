@@ -51,7 +51,7 @@ class SimpleJobTestMixin(object):
                         expander.expand = new_expand_wrapper(expander.expand,
                                                              target_mtime)
                     depends_dict[depends_type].append(expander)
-                elif isinstance(depend, basestring):
+                elif isinstance(depend, str):
                     depends_dict['depends'].append(
                         self.expander_type(
                             self.target_type,
@@ -77,7 +77,7 @@ class SimpleJobTestMixin(object):
                         expander.expand = new_expand_wrapper(expander.expand,
                                                              target_mtime)
                     targets_dict[target_type].append(expander)
-                elif isinstance(target, basestring):
+                elif isinstance(target, str):
 
                     targets_dict["produces"].append(
                         self.expander_type(

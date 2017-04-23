@@ -77,7 +77,7 @@ class Expander(object):
         unexpanded id and the same build context
         """
         return [self.base_class(self.unexpanded_id,
-                self.unexpanded_id, build_context) for build_context in self.expand_build_context(build_context, self.unexpanded_id).values()]
+                self.unexpanded_id, build_context) for build_context in list(self.expand_build_context(build_context, self.unexpanded_id).values())]
 
     def different(self, expander):
         """The other one should probably also check if they are different
@@ -187,7 +187,7 @@ class TimestampExpander(Expander):
         expanded_dict = self.expand_build_context(build_context,
                 self.unexpanded_id, self.file_step, past=self.past)
         expanded_nodes = []
-        for expanded_id, new_build_context in expanded_dict.iteritems():
+        for expanded_id, new_build_context in expanded_dict.items():
             expanded_node = self.base_class(
                     self.unexpanded_id, expanded_id, new_build_context,
                     config=self.config)

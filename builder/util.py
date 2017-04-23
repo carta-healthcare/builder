@@ -109,7 +109,7 @@ class BuilderArrowFactory(arrow.ArrowFactory):
         if pd is not None and len(args) == 1 and isinstance(args[0], pd.Timestamp):
             return super(BuilderArrowFactory, self).get(args[0])
         elif len(args) == 1 and isinstance(
-            args[0], basestring
+            args[0], str
             ) and BuilderArrowFactory.pipedream_expr.match(args[0]):
             return super(BuilderArrowFactory, self).get(parse_datetime(
                 args[0], time_sep='-'))
@@ -245,10 +245,37 @@ def floor_timestamp_given_time_step(timestamp, time_step):
     if time_step == 'month':
         return ts.floor('month')
 
-    if isinstance(time_step, basestring):
+    if isinstance(time_step, str):
         delta = convert_to_timedelta(time_step)
         time_step = delta.total_seconds()
 
     floored_offset = ts.timestamp % time_step
     floored = ts.timestamp - floored_offset
     return arrow_factory.get(floored)
+
+def parse_target(target):
+    """Gets the flag type from target name
+
+    Args:
+        target: target spec
+    """
+    pattern = re.compile(r'([\^\=\+><\/]*)(.*)')
+    match = pattern.match(target.strip())
+    flag_glob = match.groups()[0]
+
+    target_name = match.groups()[1]
+    if not flag_glob:
+        flag_glob = ""
+    flags = []
+    if "+" in flag_glob:
+        flags.append('force')
+    if "^" in flag_glob or "<" in flag_glob:
+        flags.append('downtree')
+    if "=" in flag_glob:
+        flags.append('exact')
+    if ">" in flag_glob:
+        flags.append('uptree')
+    if "/" in flag_glob:
+        flags.append('exclude')
+
+    return target_name, set(flags)

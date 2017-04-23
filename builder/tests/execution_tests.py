@@ -49,7 +49,7 @@ class ExtendedMockExecutor(Executor):
                 continue
             else:
                 target.do_get_mtime = mock.Mock(return_value=effect[target_id])
-            print target_id, target.do_get_mtime()
+            print(target_id, target.do_get_mtime())
 
         result = ExecutionResult(False, success, command, command)
         return result
@@ -123,7 +123,7 @@ class ExecutionManagerTests1(unittest.TestCase):
         execution_manager.start_execution(inline=True)
 
         # Then
-        self.assertEquals(execution_manager.executor.execute.call_count, 2)
+        self.assertEqual(execution_manager.executor.execute.call_count, 2)
 
     def test_inline_execution_retries(self):
         # Given
@@ -142,7 +142,7 @@ class ExecutionManagerTests1(unittest.TestCase):
         execution_manager.start_execution(inline=True)
 
         # Then
-        self.assertEquals(execution_manager.executor.execute.call_count, 5)
+        self.assertEqual(execution_manager.executor.execute.call_count, 5)
 
 class ExecutionManagerTests2(unittest.TestCase):
 
@@ -225,7 +225,7 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A")
 
         # Then
-        self.assertEquals(set([]), execution_manager.get_next_jobs_to_run("A"))
+        self.assertEqual(set([]), execution_manager.get_next_jobs_to_run("A"))
 
 
     def test_simple_get_next_jobs(self):
@@ -249,7 +249,7 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A")
 
         # Then
-        self.assertEquals(set(["B"]), execution_manager.get_next_jobs_to_run("A"))
+        self.assertEqual(set(["B"]), execution_manager.get_next_jobs_to_run("A"))
 
     def test_simple_get_next_jobs_lower(self):
         # Given
@@ -280,10 +280,10 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A")
 
         # Then
-        for node_id, node in execution_manager.build.node.iteritems():
+        for node_id, node in execution_manager.build.node.items():
             if execution_manager.build.is_target_object(node["object"]):
-                print node_id, node["object"].get_mtime()
-        self.assertEquals(set(["C"]), execution_manager.get_next_jobs_to_run("A"))
+                print(node_id, node["object"].get_mtime())
+        self.assertEqual(set(["C"]), execution_manager.get_next_jobs_to_run("A"))
 
     def test_simple_get_next_jobs_failed_but_creates_targets(self):
         """test_simple_get_next_jobs_failed
@@ -306,7 +306,7 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A")
 
         # The
-        self.assertEquals(set(["B"]), execution_manager.get_next_jobs_to_run("A"))
+        self.assertEqual(set(["B"]), execution_manager.get_next_jobs_to_run("A"))
 
     def test_simple_get_next_jobs_failed_but_no_targets(self):
         """test_simple_get_next_jobs_failed
@@ -330,7 +330,7 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A")
 
         # The
-        self.assertEquals(set(["A"]), execution_manager.get_next_jobs_to_run("A"))
+        self.assertEqual(set(["A"]), execution_manager.get_next_jobs_to_run("A"))
 
     def test_simple_get_next_jobs_failed_max(self):
         """test_simple_get_next_jobs_failed_max
@@ -350,11 +350,11 @@ class ExecutionManagerTests2(unittest.TestCase):
         # When
         execution_manager.running = True
         execution_manager.submit("B", {})
-        for i in xrange(6):
+        for i in range(6):
             execution_manager.execute("A")
 
         # The
-        self.assertEquals(set([]), execution_manager.get_next_jobs_to_run("A"))
+        self.assertEqual(set([]), execution_manager.get_next_jobs_to_run("A"))
 
     def test_multiple_get_next_jobs(self):
         """test_multiple_get_next_jobs
@@ -381,7 +381,7 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A")
 
         # Then
-        self.assertEquals({"B", "C", "D"}, set(execution_manager.get_next_jobs_to_run("A")))
+        self.assertEqual({"B", "C", "D"}, set(execution_manager.get_next_jobs_to_run("A")))
 
     def test_multiple_get_next_jobs_failed(self):
         """test_multiple_get_next_jobs_failed
@@ -416,7 +416,7 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A")
 
         # Then
-        self.assertEquals({"A"}, set(execution_manager.get_next_jobs_to_run("A")))
+        self.assertEqual({"A"}, set(execution_manager.get_next_jobs_to_run("A")))
 
     def test_multiple_get_next_jobs_failed_max(self):
         """test_multiple_get_next_jobs_failed_max
@@ -442,14 +442,14 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.submit("A", {}, direction={"up", "down"})
 
         # When
-        for i in xrange(6):
+        for i in range(6):
             execution_manager.execute("A")
         execution_manager.build.get_target('A1-target').do_get_mtime = mock.Mock(return_value=None)
 
         # Then
-        self.assertEquals({"C", "D"}, set(execution_manager.get_next_jobs_to_run("A")))
-        self.assertEquals(execution_manager.get_build().get_job("C").get_should_run(), True)
-        self.assertEquals(execution_manager.get_build().get_job("D").get_should_run(), True)
+        self.assertEqual({"C", "D"}, set(execution_manager.get_next_jobs_to_run("A")))
+        self.assertEqual(execution_manager.get_build().get_job("C").get_should_run(), True)
+        self.assertEqual(execution_manager.get_build().get_job("D").get_should_run(), True)
 
     def test_depends_one_or_more_next_jobs(self):
         """test_depends_one_or_more_next_jobs
@@ -482,15 +482,15 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A2")
 
         # Then
-        self.assertEquals(set(), set(execution_manager.get_next_jobs_to_run("A1")))
-        self.assertEquals({"A2"}, set(execution_manager.get_next_jobs_to_run("A2")))
-        self.assertEquals(execution_manager.get_build().get_job("B").get_should_run(), False)
+        self.assertEqual(set(), set(execution_manager.get_next_jobs_to_run("A1")))
+        self.assertEqual({"A2"}, set(execution_manager.get_next_jobs_to_run("A2")))
+        self.assertEqual(execution_manager.get_build().get_job("B").get_should_run(), False)
 
         # On rerun, A2 complete successfully and therefore B should run
         execution_manager.execute("A2")
-        self.assertEquals({"B"}, set(execution_manager.get_next_jobs_to_run("A1")))
-        self.assertEquals({"B"}, set(execution_manager.get_next_jobs_to_run("A2")))
-        self.assertEquals(execution_manager.get_build().get_job("B").get_should_run(), True)
+        self.assertEqual({"B"}, set(execution_manager.get_next_jobs_to_run("A1")))
+        self.assertEqual({"B"}, set(execution_manager.get_next_jobs_to_run("A2")))
+        self.assertEqual(execution_manager.get_build().get_job("B").get_should_run(), True)
 
 
     def test_depends_one_or_more_next_jobs_failed_max_lower(self):
@@ -529,11 +529,11 @@ class ExecutionManagerTests2(unittest.TestCase):
             execution_manager.execute(execution)
 
         # Then
-        self.assertEquals(execution_manager.get_build().get_job("B_2015-01-01-00-05-00").get_should_run(), False)
-        self.assertEquals(execution_manager.get_build().get_job("B_2015-01-01-00-05-00").get_stale(), True)
+        self.assertEqual(execution_manager.get_build().get_job("B_2015-01-01-00-05-00").get_should_run(), False)
+        self.assertEqual(execution_manager.get_build().get_job("B_2015-01-01-00-05-00").get_stale(), True)
         for job_id in ("A_2015-01-01-00-05-00", "A_2015-01-01-00-00-00", "B_2015-01-01-00-00-00", "B_2015-01-01-00-05-00"):
-            self.assertEquals({"C"}, set(execution_manager.get_next_jobs_to_run(job_id)))
-        self.assertEquals(execution_manager.get_build().get_job("C").get_should_run(), True)
+            self.assertEqual({"C"}, set(execution_manager.get_next_jobs_to_run(job_id)))
+        self.assertEqual(execution_manager.get_build().get_job("C").get_should_run(), True)
 
 
     def test_upper_update(self):
@@ -561,12 +561,12 @@ class ExecutionManagerTests2(unittest.TestCase):
         execution_manager.execute("A")
         execution_manager.execute("B")
         execution_manager.submit("A", {}, force=True)
-        for node_id, node in execution_manager.build.node.iteritems():
+        for node_id, node in execution_manager.build.node.items():
             if execution_manager.build.is_target(node_id):
-                print node_id, node["object"].get_mtime()
+                print(node_id, node["object"].get_mtime())
 
         # Then
-        self.assertEquals(set(), set(execution_manager.get_next_jobs_to_run("B")))
+        self.assertEqual(set(), set(execution_manager.get_next_jobs_to_run("B")))
 
     def test_multiple_targets_one_exists(self):
         # Given
@@ -591,16 +591,16 @@ class ExecutionManagerTests2(unittest.TestCase):
         for execution in ("A", "B", "C", "E", "A", "A"):
             job = execution_manager.build.get_job(execution)
             if job.get_should_run_immediate():
-                print execution
+                print(execution)
                 execution_manager.execute(execution)
 
         # Then
-        self.assertEquals({"C", "D"}, set(execution_manager.get_next_jobs_to_run("A")))
-        self.assertEquals(execution_manager.get_build().get_job("C").get_should_run(), True)
+        self.assertEqual({"C", "D"}, set(execution_manager.get_next_jobs_to_run("A")))
+        self.assertEqual(execution_manager.get_build().get_job("C").get_should_run(), True)
         execution_manager.execute("C")
-        self.assertEquals({"E"}, set(execution_manager.get_next_jobs_to_run("C")))
-        self.assertEquals(execution_manager.get_build().get_job("E").get_should_run(), True)
-        self.assertEquals(execution_manager.get_build().get_job("D").get_should_run(), True)
+        self.assertEqual({"E"}, set(execution_manager.get_next_jobs_to_run("C")))
+        self.assertEqual(execution_manager.get_build().get_job("E").get_should_run(), True)
+        self.assertEqual(execution_manager.get_build().get_job("D").get_should_run(), True)
 
     def test_effect_job(self):
         # Given
