@@ -584,78 +584,48 @@ def new_expand_wrapper(old_expand, target_mtime):
         return targets
     return new_expand
 
-class SimpleTestJobDefinition(JobDefinition):
+class SimpleJobDefinition(JobDefinition):
     """A simple API for creating a job through constructor args"""
 
 
-    def __init__(self, unexpanded_id=None, targets=None, depends=None,
+    def __init__(self, unexpanded_id=None,
             config=None, should_run=False, parents_should_run=False,
-            target_type=None, expander_type=None,
-            depends_dict=None, targets_dict=None, **kwargs):
-        super(SimpleTestJobDefinition, self).__init__(unexpanded_id, config=config, **kwargs)
-        self.targets = targets
+            expander_type=None,
+            depends=None, targets=None, **kwargs):
+        super(SimpleJobDefinition, self).__init__(unexpanded_id, config=config, **kwargs)
 
         self.should_run = should_run
         self.parents_should_run = parents_should_run
-        self.target_type = target_type
         self.expander_type = expander_type or builder.expanders.Expander
 
-        self.setup_dependencies_and_targets(depends_dict, targets_dict, depends, targets)
+        self.setup_dependencies_and_targets(depends, targets)
 
 
-    def setup_dependencies_and_targets(self, depends_dict, targets_dict, depends, targets):
+    def setup_dependencies_and_targets(self, depends_dict, targets_dict):
+        def restructure_dict(output_dict, input_dict):
+            for depends_type, depends in input_dict.items():
+                output_dict[depends_type] = []
+                for depend in depends:
+                    expander_type = depend.get('expander', builder.expanders.Expander)
+                    target_type = depend.get('type', builder.targets.LocalFileSystemTarget)
+                    unexpanded_id = depend['unexpanded_id']
+                    output_dict[depends_type].append(expander_type(target_type, unexpanded_id))
+
         # Set up dependency dictionary
-        targets_mtime_dict = {}
         depends_dict = depends_dict or {}
         depends_dict.setdefault('depends', [])
         depends_dict.setdefault('depends_one_or_more', [])
-        if depends:
-            for depend in depends:
-                if isinstance(depend, dict):
-                    depends_type = depend.pop('type', 'depends')
-                    has_mtime = "start_mtime" in depend
-                    target_mtime = depend.pop('start_mtime', None)
-                    expander = self.expander_type(
-                            self.target_type,
-                            **depend)
-                    if has_mtime:
-                        expander.expand = new_expand_wrapper(expander.expand,
-                                                             target_mtime)
-                    depends_dict[depends_type].append(expander)
-                elif isinstance(depend, str):
-                    depends_dict['depends'].append(
-                        self.expander_type(
-                            self.target_type,
-                        depend)
-                    )
-        self.dependencies = depends_dict
+        self.dependencies = {}
+        restructure_dict(self.dependencies, depends_dict)
 
         # Set up target dictionary
         targets_dict = targets_dict or {}
         targets_dict.setdefault("produces", [])
         targets_dict.setdefault("alternates", [])
-        if targets:
-            for target in targets:
-                if isinstance(target, dict):
-                    target_type = target.pop('type', 'produces')
-                    has_mtime = "start_mtime" in target
-                    target_mtime = target.pop('start_mtime', None)
-                    expander = self.expander_type(
-                        self.target_type,
-                        **target
-                    )
-                    if has_mtime:
-                        expander.expand = new_expand_wrapper(expander.expand,
-                                                             target_mtime)
-                    targets_dict[target_type].append(expander)
-                elif isinstance(target, str):
 
-                    targets_dict["produces"].append(
-                        self.expander_type(
-                            self.target_type,
-                            target)
-                     )
-        self.targets = targets_dict
+        self.targets = {}
+        restructure_dict(self.targets, targets_dict)
+
 
 
 class TimestampExpandedJobDefinition(JobDefinition):
