@@ -149,6 +149,7 @@ class LocalExecutor(Executor):
             return ExecutionResult(is_async=False, status=proc.returncode == 0, stdout=stdout, stderr=stderr)
         else:
             LOG.info("Executing python job definition")
+            job.job.run(job)
             return ExecutionResult(is_async=False, status=True)
 
 
@@ -382,6 +383,7 @@ class ExecutionManager(object):
         LOG.info("Adding {} to ExecutionManager's complete queue".format(job_id))
         self._complete_queue.put(job_id)
 
+
     def start_execution(self, inline=True):
         """
         Begin executing jobs
@@ -393,7 +395,8 @@ class ExecutionManager(object):
         # Seed initial jobs
         work_queue = self._work_queue
         next_jobs = self.get_jobs_to_run()
-        list(map(self.add_to_work_queue, next_jobs))
+        LOG.debug("EXECUTION_LOOP[work_queue] => Next jobs to run: {}".format(next_jobs))
+        map(self.add_to_work_queue, next_jobs)
 
         # Start completed jobs consumer if not inline
         executor = None

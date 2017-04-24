@@ -77,6 +77,15 @@ class Job(object):
             return True
         return alternate_mtimes
 
+
+    def get_dependency_ids(self):
+        return self.build_graph.get_dependency_ids(self.unique_id)
+
+
+    def get_target_ids(self):
+        return self.build_graph.get_target_ids(self.unique_id)
+
+
     def update_stale(self, new_value):
         """Updates the stale value of the node and then updates all the above
         nodes.
@@ -398,6 +407,8 @@ class Job(object):
         """Returns the job's expanded command"""
         command_template = self.job.get_command(self.unique_id, self.build_context,
                                           self.build_graph)
+        if command_template is None:
+            return None
         return self._replace_command(command_template, )
 
     def _replace_command(self, command):
@@ -590,10 +601,11 @@ class SimpleJobDefinition(JobDefinition):
 
     def __init__(self, unexpanded_id=None,
             config=None, should_run=False, parents_should_run=False,
-            expander_type=None,
+            expander_type=None, run=None,
             depends=None, targets=None, **kwargs):
         super(SimpleJobDefinition, self).__init__(unexpanded_id, config=config, **kwargs)
 
+        self.run_func = run
         self.should_run = should_run
         self.parents_should_run = parents_should_run
         self.expander_type = expander_type or builder.expanders.Expander
@@ -625,6 +637,11 @@ class SimpleJobDefinition(JobDefinition):
 
         self.targets = {}
         restructure_dict(self.targets, targets_dict)
+
+    def run(self, job):
+        if not self.run_func:
+            raise NotImplementedError("Neither command nor run function specified")
+        return self.run_func(job)
 
 
 
