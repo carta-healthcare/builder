@@ -136,17 +136,23 @@ class Executor(object):
 
 class LocalExecutor(Executor):
 
+    def __init__(self, *args, **kwargs):
+        capture_output = kwargs.pop("capture_output", False)
+        super().__init__(*args, **kwargs)
+        self.capture_output = capture_output
+
     def do_execute(self, job):
         command = job.get_command()
         if command:
-            #command_list = shlex.split(command)
             LOG.info("Executing '{}'".format(command))
-            proc = subprocess.Popen(command, shell=True)
-            proc.wait()
-            # proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-            # (stdout, stderr) = proc.communicate()
-            # LOG.info("{} STDOUT: {}".format(command, stdout))
-            # LOG.info("{} STDERR: {}".format(command, stderr))
+            if self.capture_output:
+                proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                (stdout, stderr) = proc.communicate()
+                LOG.info("{} STDOUT: {}".format(command, stdout))
+                LOG.info("{} STDERR: {}".format(command, stderr))
+            else:
+                proc = subprocess.Popen(command, shell=True)
+                proc.wait()
 
             return ExecutionResult(is_async=False, status=proc.returncode == 0, stdout=None, stderr=None)
         else:
