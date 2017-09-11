@@ -141,12 +141,14 @@ class LocalExecutor(Executor):
         if command:
             #command_list = shlex.split(command)
             LOG.info("Executing '{}'".format(command))
-            proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-            (stdout, stderr) = proc.communicate()
-            LOG.info("{} STDOUT: {}".format(command, stdout))
-            LOG.info("{} STDERR: {}".format(command, stderr))
+            proc = subprocess.Popen(command, shell=True)
+            proc.wait()
+            # proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            # (stdout, stderr) = proc.communicate()
+            # LOG.info("{} STDOUT: {}".format(command, stdout))
+            # LOG.info("{} STDERR: {}".format(command, stderr))
 
-            return ExecutionResult(is_async=False, status=proc.returncode == 0, stdout=stdout, stderr=stderr)
+            return ExecutionResult(is_async=False, status=proc.returncode == 0, stdout=None, stderr=None)
         else:
             LOG.info("Executing python job definition")
             job.job.run(job)

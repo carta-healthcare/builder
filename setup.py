@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 setup(name='builder',
-      version='0.1.0',
+      version='0.2.1',
       description='A framework for building batch processing pipelines',
       author='Max Mizikar, Matt Hollingsworth',
       author_email='mr.hworth@gmail.com',
