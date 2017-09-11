@@ -1,5 +1,5 @@
 {% set name = "builder" %}
-{% set version = "0.2.0" %}
+{% set version = "0.2.1" %}
 {% set hash_type = "sha256" %}
 {% set hash_value = "30508cf662e07ae47020782e3227fcc578148b827d530d8f1f36f1d2ea8e8a52" %}
 
