@@ -425,14 +425,21 @@ class Job(object):
 
         dependency_ids = self.build_graph.get_dependency_ids(self.unique_id)
         existing_dependency_ids = []
+        all_dependency_ids = []
         for dependency_id in dependency_ids:
             dependency = self.build_graph.get_target(dependency_id)
             if dependency.get_exists():
                 existing_dependency_ids.append(dependency_id)
+            else:
+                all_dependency_ids.append(dependency_id)
 
         if "$^" in command:
             prerequisites_string = " ".join(existing_dependency_ids)
             command = command.replace("$^", prerequisites_string)
+
+        if "$*" in command:
+            prerequisites_string = " ".join(all_dependency_ids)
+            command = command.replace("$*", prerequisites_string)
 
         if "$A" in command:
             user_args = self.build_context.get('user_args') or []
