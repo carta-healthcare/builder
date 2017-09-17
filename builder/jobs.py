@@ -439,6 +439,8 @@ class Job(object):
             user_args = " ".join(user_args)
             command = command.replace("$A", user_args)
 
+        command = command.format(**self.build_context)
+
         command = str(command)
         return command
 
