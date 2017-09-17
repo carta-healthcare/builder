@@ -425,7 +425,7 @@ class Job(object):
 
         dependency_ids = self.build_graph.get_dependency_ids(self.unique_id)
         existing_dependency_ids = []
-        all_dependency_ids = []
+        all_dependency_ids = dependency_ids
         for dependency_id in dependency_ids:
             dependency = self.build_graph.get_target(dependency_id)
             if dependency.get_exists():
