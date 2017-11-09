@@ -420,7 +420,9 @@ class Job(object):
         if "$@" in command:
             target_edges = self.build_graph.out_edges(self.unique_id)
             target_edges = filter(lambda x: self.build_graph.get_edge_data(*x).get('label') == 'produces', target_edges)
-            targets = " ".join(map(lambda x: x[1], target_edges))
+            
+            targets = map(lambda x: '"' + x + '"', map(lambda x: x[1], target_edges))
+            targets = " ".join(targets)
             command = command.replace("$@", targets)
 
         dependency_ids = self.build_graph.get_dependency_ids(self.unique_id)
@@ -432,11 +434,13 @@ class Job(object):
                 existing_dependency_ids.append(dependency_id)
 
         if "$^" in command:
-            prerequisites_string = " ".join(existing_dependency_ids)
+            prerequisites = map(lambda x: '"' + x + '"', existing_dependency_ids)
+            prerequisites_string = " ".join(prerequisites)
             command = command.replace("$^", prerequisites_string)
 
         if "$*" in command:
-            prerequisites_string = " ".join(all_dependency_ids)
+            prerequisites = map(lambda x: '"' + x + '"', all_dependency_ids)
+            prerequisites_string = " ".join(prerequisites)
             command = command.replace("$*", prerequisites_string)
 
         if "$A" in command:
